@@ -1,15 +1,24 @@
 diff --git a/targets/f7/api_symbols.csv b/targets/f7/api_symbols.csv
-index f1ad28a..78a7e50 100644
+index f1ad28a..e3a4be8 100644
 --- a/targets/f7/api_symbols.csv
 +++ b/targets/f7/api_symbols.csv
 @@ -1,5 +1,5 @@
  entry,status,name,type,params
 -Version,+,88.2,,
-+Version,+,88.3,,
++Version,+,88.4,,
  Header,+,applications/drivers/subghz/cc1101_ext/cc1101_ext_interconnect.h,,
  Header,+,applications/services/bt/bt_service/bt.h,,
  Header,+,applications/services/bt/bt_service/bt_keys_storage.h,,
-@@ -1337,6 +1337,7 @@ Function,+,furi_hal_bt_nvm_sram_sem_acquire,void,
+@@ -771,6 +771,8 @@ Function,+,ble_svc_battery_state_update,void,"uint8_t*, _Bool*"
+ Function,+,ble_svc_battery_stop,void,BleServiceBattery*
+ Function,+,ble_svc_battery_update_level,_Bool,"BleServiceBattery*, uint8_t"
+ Function,+,ble_svc_battery_update_power_state,_Bool,"BleServiceBattery*, _Bool"
++Function,+,ble_svc_dev_info_clear_pnp_id,void,
++Function,+,ble_svc_dev_info_set_pnp_id,void,"uint8_t, uint16_t, uint16_t, uint16_t"
+ Function,+,ble_svc_dev_info_start,BleServiceDevInfo*,
+ Function,+,ble_svc_dev_info_stop,void,BleServiceDevInfo*
+ Function,-,ble_svc_hid_start,BleServiceHid*,
+@@ -1337,6 +1339,7 @@ Function,+,furi_hal_bt_nvm_sram_sem_acquire,void,
  Function,+,furi_hal_bt_nvm_sram_sem_release,void,
  Function,+,furi_hal_bt_reinit,void,
  Function,+,furi_hal_bt_set_key_storage_change_callback,void,"BleGlueKeyStorageChangedCallback, void*"
@@ -17,7 +26,7 @@ index f1ad28a..78a7e50 100644
  Function,+,furi_hal_bt_start_advertising,void,
  Function,+,furi_hal_bt_start_app,FuriHalBleProfileBase*,"const FuriHalBleProfileTemplate*, FuriHalBleProfileParams, const GapRootSecurityKeys*, GapEventCallback, void*"
  Function,+,furi_hal_bt_start_packet_rx,void,"uint8_t, uint8_t"
-@@ -1985,6 +1986,7 @@ Function,-,gap_extra_beacon_start,_Bool,
+@@ -1985,6 +1988,7 @@ Function,-,gap_extra_beacon_start,_Bool,
  Function,-,gap_extra_beacon_stop,_Bool,
  Function,-,gap_get_state,GapState,
  Function,-,gap_init,_Bool,"GapConfig*, const GapRootSecurityKeys*, GapEventCallback, void*"
@@ -88,6 +97,119 @@ index 57a0bb7..88c610e 100644
 +    uint8_t adv_len,
 +    const uint8_t* scan_rsp,
 +    uint8_t scan_rsp_len);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/targets/f7/ble_glue/services/dev_info_service.c b/targets/f7/ble_glue/services/dev_info_service.c
+index ae2b976..0d15631 100644
+--- a/targets/f7/ble_glue/services/dev_info_service.c
++++ b/targets/f7/ble_glue/services/dev_info_service.c
+@@ -26,8 +26,49 @@ typedef enum {
+ struct BleServiceDevInfo {
+     uint16_t service_handle;
+     BleGattCharacteristicInstance characteristics[DevInfoSvcGattCharacteristicCount];
++    bool has_pnp_id;
++    BleGattCharacteristicInstance pnp_id_char;
+ };
+ 
++// Optional PnP ID (vendor ID source, vendor ID, product ID, version; little
++// endian). Hosts such as Android pick per-device key maps from it. Only added
++// to the service when set via ble_svc_dev_info_set_pnp_id().
++static uint8_t pnp_id[7];
++static bool pnp_id_set = false;
++
++void ble_svc_dev_info_set_pnp_id(
++    uint8_t vendor_id_source,
++    uint16_t vendor_id,
++    uint16_t product_id,
++    uint16_t version) {
++    const uint8_t value[7] = {
++        vendor_id_source,
++        vendor_id & 0xFF,
++        vendor_id >> 8,
++        product_id & 0xFF,
++        product_id >> 8,
++        version & 0xFF,
++        version >> 8};
++    memcpy(pnp_id, value, sizeof(pnp_id));
++    pnp_id_set = true;
++}
++
++void ble_svc_dev_info_clear_pnp_id(void) {
++    pnp_id_set = false;
++}
++
++static const BleGattCharacteristicParams ble_svc_dev_info_pnp_char = {
++    .name = "PnP ID",
++    .data_prop_type = FlipperGattCharacteristicDataFixed,
++    .data.fixed.length = sizeof(pnp_id),
++    .data.fixed.ptr = pnp_id,
++    .uuid.Char_UUID_16 = PNP_ID_UUID,
++    .uuid_type = UUID_TYPE_16,
++    .char_properties = CHAR_PROP_READ,
++    .security_permissions = ATTR_PERMISSION_NONE,
++    .gatt_evt_mask = GATT_DONT_NOTIFY_EVENTS,
++    .is_variable = CHAR_VALUE_LEN_CONSTANT};
++
+ static const char dev_info_man_name[] = "Flipper Devices Inc.";
+ static const char dev_info_serial_num[] = "1.0";
+ static const char dev_info_rpc_version[] = TOSTRING(PROTOBUF_MAJOR_VERSION.PROTOBUF_MINOR_VERSION);
+@@ -114,11 +155,12 @@ BleServiceDevInfo* ble_svc_dev_info_start(void) {
+ 
+     // Add Device Information Service
+     uint16_t uuid = DEVICE_INFORMATION_SERVICE_UUID;
++    dev_info_svc->has_pnp_id = pnp_id_set;
+     if(!ble_gatt_service_add(
+            UUID_TYPE_16,
+            (Service_UUID_t*)&uuid,
+            PRIMARY_SERVICE,
+-           1 + 2 * DevInfoSvcGattCharacteristicCount,
++           1 + 2 * (DevInfoSvcGattCharacteristicCount + (pnp_id_set ? 1 : 0)),
+            &dev_info_svc->service_handle)) {
+         free(dev_info_svc);
+         return NULL;
+@@ -132,6 +174,12 @@ BleServiceDevInfo* ble_svc_dev_info_start(void) {
+         ble_gatt_characteristic_update(
+             dev_info_svc->service_handle, &dev_info_svc->characteristics[i], NULL);
+     }
++    if(dev_info_svc->has_pnp_id) {
++        ble_gatt_characteristic_init(
++            dev_info_svc->service_handle, &ble_svc_dev_info_pnp_char, &dev_info_svc->pnp_id_char);
++        ble_gatt_characteristic_update(
++            dev_info_svc->service_handle, &dev_info_svc->pnp_id_char, NULL);
++    }
+ 
+     return dev_info_svc;
+ }
+@@ -143,6 +191,9 @@ void ble_svc_dev_info_stop(BleServiceDevInfo* dev_info_svc) {
+         ble_gatt_characteristic_delete(
+             dev_info_svc->service_handle, &dev_info_svc->characteristics[i]);
+     }
++    if(dev_info_svc->has_pnp_id) {
++        ble_gatt_characteristic_delete(dev_info_svc->service_handle, &dev_info_svc->pnp_id_char);
++    }
+ 
+     /* Delete service */
+     ble_gatt_service_delete(dev_info_svc->service_handle);
+diff --git a/targets/f7/ble_glue/services/dev_info_service.h b/targets/f7/ble_glue/services/dev_info_service.h
+index 42471e5..2e377a9 100644
+--- a/targets/f7/ble_glue/services/dev_info_service.h
++++ b/targets/f7/ble_glue/services/dev_info_service.h
+@@ -18,6 +18,17 @@ BleServiceDevInfo* ble_svc_dev_info_start(void);
+ 
+ void ble_svc_dev_info_stop(BleServiceDevInfo* service);
+ 
++/** Add a PnP ID characteristic to services started after this call
++ * (e.g. so a host loads a specific device's key map). */
++void ble_svc_dev_info_set_pnp_id(
++    uint8_t vendor_id_source,
++    uint16_t vendor_id,
++    uint16_t product_id,
++    uint16_t version);
++
++/** Stop adding the PnP ID characteristic to services started after this call. */
++void ble_svc_dev_info_clear_pnp_id(void);
 +
  #ifdef __cplusplus
  }

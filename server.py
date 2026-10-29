@@ -50,15 +50,18 @@ BUTTONS = {
 }
 
 # Bluetooth HID usages sent by the Flipper's Telly Remote app: ("k", keyboard
-# usage) or ("c", consumer usage). Verified on the TV: up/down/right, ok,
-# back, home, vol_up, menu, sleep. The Telly-only buttons (telly, screen, A/B,
-# input, power) have no known HID code yet, so they always use infrared.
+# usage) or ("c", consumer usage); infrared is the fallback when the app isn't
+# connected. The Telly-specific keys come from Telly's TYRC-1 spec sheet and only
+# work because the Flipper app reports the real remote's PnP ID (vendor 0x2D01,
+# product 0x5017): the TV picks its key map by that ID.
 BLE_BUTTONS = {
-    "up": ("k", "52"),
-    "down": ("k", "51"),
-    "left": ("k", "50"),
-    "right": ("k", "4F"),
-    "ok": ("k", "28"),
+    # D-pad and OK use the consumer usages from the TYRC-1 spec sheet: with the
+    # Telly PnP ID the TV uses Telly's key map, which ignores keyboard Enter.
+    "up": ("c", "42"),
+    "down": ("c", "43"),
+    "left": ("c", "44"),
+    "right": ("c", "45"),
+    "ok": ("c", "41"),
     "back": ("c", "224"),
     "home": ("c", "223"),
     "vol_up": ("c", "E9"),
@@ -66,6 +69,14 @@ BLE_BUTTONS = {
     "mute": ("c", "E2"),
     # Found with the key explorer: same as the remote's Menu (opens Telly Settings).
     "menu": ("c", "40"),
+    # Telly-specific keys (consumer page), from the TYRC-1 spec sheet.
+    "input": ("c", "1BB"),
+    "telly": ("c", "221"),       # the red button; the spec calls it "Assistant"
+    "screen_up": ("c", "7A"),    # "Large screen"
+    "screen_down": ("c", "79"),  # "Small screen"
+    "a": ("c", "E5"),
+    "b": ("c", "203"),
+
     # Not on the physical remote. Found with the key explorer: turns off both
     # screens and the mood lighting (Power only turns off the main screen).
     "sleep": ("c", "32"),
@@ -190,6 +201,7 @@ MOOD_EFFECTS = [
     "Static Rainbow", "4th of July", "4th of July Static",
 ]
 NAV_DELAY = 0.35     # between d-pad presses
+IR_MIN_GAP = 0.35    # shortest safe gap between IR codes
 SCREEN_DELAY = 1.2   # after a press that opens or closes a panel
 macro_lock = threading.Lock()
 
@@ -249,7 +261,8 @@ def run_steps(steps, scale=None):
                 return
         for button, delay in steps:
             via, _ = press_button(button)
-            time.sleep(delay * scale if via == "bluetooth" else delay)
+            # IR needs real gaps between codes, whatever the Bluetooth timing is.
+            time.sleep(delay * scale if via == "bluetooth" else max(delay, IR_MIN_GAP))
 
 
 # Shortcuts into the lower "smart screen" bar. Input opens it with the cursor
@@ -279,8 +292,14 @@ SHORTCUTS = {
         "HDMI", "Remote Control", "Account", "Accessibility", "Help & Support",
     ],
 }
-TAB_DELAY = 0.6       # after switching tab, while its items load
-SHORTCUT_SCALE = 0.5  # navigation needs a little time for the bar to redraw
+# Over Bluetooth the TV takes key presses as fast as we send them, except while
+# the lower screen opens and while a tab loads its tiles; only wait there.
+# (Without the tab wait, Down lands in For You's tiles: its first two match
+# Inputs, so HDMI 1/2 "work" but HDMI 3 opens TV Tuner.)
+SHORTCUT_OPEN_WAIT = 0.5  # after Input, while the lower screen opens
+SHORTCUT_TAB_WAIT = 0.6   # after the last tab move, while its tiles load
+SHORTCUT_ROW_WAIT = 0.2   # after moving down into the tiles
+SHORTCUT_KEY_GAP = 0.03   # between other presses
 
 
 def shortcut_macro(tab, item):
@@ -288,20 +307,24 @@ def shortcut_macro(tab, item):
     if tab == "Settings":
         settings = SHORTCUTS["Settings"]
         return (
-            [("menu", SCREEN_DELAY)]
-            + [("up", NAV_DELAY)] * len(settings)
-            + [("down", NAV_DELAY)] * item_index
-            + [("ok", SCREEN_DELAY)]
+            [("menu", 0)]
+            + [("up", 0)] * len(settings)
+            + [("down", 0)] * item_index
+            + [("ok", 0)]
         )
     tab_index = SMART_TABS.index(tab)
+    gap = SHORTCUT_KEY_GAP
+    tab_moves = [("right", gap)] * tab_index
+    if tab_moves:
+        tab_moves[-1] = ("right", SHORTCUT_TAB_WAIT)
     return (
-        [("input", SCREEN_DELAY), ("up", SCREEN_DELAY)]
-        + [("left", NAV_DELAY)] * len(SMART_TABS)
-        + [("right", TAB_DELAY)] * tab_index
-        + [("down", SCREEN_DELAY)]
-        + [("left", NAV_DELAY)] * 6
-        + [("right", NAV_DELAY)] * item_index
-        + [("ok", SCREEN_DELAY)]
+        [("input", SHORTCUT_OPEN_WAIT), ("up", gap)]
+        + [("left", gap)] * len(SMART_TABS)
+        + (tab_moves or [("left", SHORTCUT_TAB_WAIT)])
+        + [("down", SHORTCUT_ROW_WAIT)]
+        + [("left", gap)] * 6
+        + [("right", gap)] * item_index
+        + [("ok", 0)]
     )
 
 
@@ -356,9 +379,8 @@ class Handler(SimpleHTTPRequestHandler):
             if macro_lock.locked():
                 return self._json(409, {"error": "another shortcut is running"})
             try:
-                # Settings goes via Menu, all Bluetooth, so it can run at full speed.
-                scale = BLE_DELAY_SCALE if tab == "Settings" else SHORTCUT_SCALE
-                run_steps(shortcut_macro(tab, item), scale)
+                # Delays in shortcut_macro are already Bluetooth timings.
+                run_steps(shortcut_macro(tab, item), 1.0)
             except Exception as e:
                 return self._json(503, {"error": str(e)})
             return self._json(200, {"ok": True})

@@ -15,8 +15,8 @@ again. It grew from there into a remote with a few extras the real one doesn't h
 ## How it talks to the TV
 
 A Flipper Zero does the talking. It pairs with the TV **over Bluetooth as a second Telly
-remote**, so nothing has to point at the TV, and falls back to **infrared** for the few
-buttons whose Bluetooth codes aren't known yet.
+remote**, so nothing has to point at the TV, and falls back to **infrared** whenever the
+Flipper app isn't connected (Power is still IR for now).
 
 ```
 Browser → server.py (localhost) → USB → Flipper Zero ─┬─ Bluetooth (HID) → Telly
@@ -58,6 +58,9 @@ Browser → server.py (localhost) → USB → Flipper Zero ─┬─ Bluetooth (
 Optional: copy `config.example.json` to `config.json` to name your HDMI inputs.
 
 ### Pairing the Flipper with the TV (once)
+
+If the Flipper's Bluetooth identity changes (address or PnP ID), the TV may keep its cached
+key map, so pair again.
 
 1. On the TV: **Menu → Remote Control → Pair**.
 2. *Then* start the Telly Remote app, so it's in its first ~30 s of fast advertising.
@@ -101,27 +104,42 @@ It uses a public address with the Telink OUI (`A4:C1:38`). Stock Flipper firmwar
 advertises as General Discoverable and can't set the scan response, hence the firmware patch
 (`furi_hal_bt_set_custom_adv_data`). With byte-identical packets the TV connects and pairs.
 
-Keys the TV accepts over Bluetooth (standard HID usages):
+**Key map.** The TV picks its key map from the remote's Device Information **PnP ID**. The
+real remote reports `01 012D 1750 0000` (Bluetooth SIG source, vendor `0x2D01`, product
+`0x5017`, version 0). Without it the TV falls back to Android's generic map, so the standard
+keys work but the Telly ones (Input, Screen ▲/▼, A, B, red button) are ignored. The patch adds
+`ble_svc_dev_info_set_pnp_id()` and the app reports the remote's ID. With Telly's map loaded,
+send exactly the remote's codes; for example keyboard Enter no longer works as OK.
 
-| Key | Usage | Notes |
-|---|---|---|
-| Up / Down / Left / Right | keyboard `52` / `51` / `50` / `4F` | |
-| OK | keyboard `28` (Enter) | |
-| Back / Home | consumer `224` / `223` | |
-| Vol + / Vol − / Mute | consumer `E9` / `EA` / `E2` | |
-| Menu | consumer `40` | Opens Telly Settings, same as Menu ≡ |
-| Sleep | consumer `32` | Not on the remote: both screens and mood lighting off |
+Keys (consumer page `0x0C`), from Telly's TYRC-1 spec sheet
+([manuals.plus](https://manuals.plus/telly-inc/tyrc-1-remote-control-manual)) and testing:
 
-Power, Input, the red Telly button, Screen ▲/▼ and A/B still go by IR. Their Bluetooth
-codes could be found by pairing a real remote to a computer and capturing its HID reports.
+| Key | Usage | Key | Usage |
+|---|---|---|---|
+| Power | `30` (untested; sent by IR) | Up / Down | `42` / `43` |
+| Input | `1BB` | Left / Right | `44` / `45` |
+| Red Telly ("Assistant", voice) | `221` | OK | `41` |
+| Back / Home | `224` / `223` | A / B | `E5` / `203` |
+| Screen ▲ ("Large screen") | `7A` | Mute | `E2` |
+| Screen ▼ ("Small screen") | `79` | Vol + / Vol − | `E9` / `EA` |
+| Menu | `40` | **Sleep** (not on the remote) | `32` |
+
+Sleep turns off both screens and the mood lighting; Power wakes the TV. The spec reserves
+custom codes `0x0200`–`0x0210` (B uses `0x203`) and mentions Back+OK / Back+Down combos.
+
+The remote also has a "find me" buzzer service (`00000AA0-3C17-D293-8E48-14FE2E4DA212`,
+write `0x01` to characteristic `B002` to beep for 30 s). The TV doesn't expose it, and a
+sleeping remote isn't connectable, so it can't reliably find a lost remote.
 
 ### Macros
 
 Mood lighting and shortcuts replay menu navigation. When every step has a Bluetooth code,
 the server sends the whole sequence as one `telly seq` command and the Flipper plays it with
-10 ms key presses and no pauses. Shortcuts that start with Input (IR) use short pauses while
-the lower screen redraws. `BLE_DELAY_SCALE` in `server.py` adds pauses back if a TV misses
-steps.
+10 ms key presses and no pauses. Shortcuts into the lower screen only wait where the TV
+loads (0.5 s after Input, 0.6 s after the last tab move, 0.2 s into the tiles), about 2 s in
+total. Without the tab wait, Down lands in For You's tiles instead (its first two tiles match
+Inputs, so the bug only shows on HDMI 3). The waits are `SHORTCUT_*` in `server.py`, and
+`BLE_DELAY_SCALE` adds pauses back to mood lighting if a TV misses steps.
 
 ## Repo layout
 

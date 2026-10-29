@@ -12,7 +12,7 @@
 //   telly unpair         forget bonded devices (app-local keys only)
 //
 // Needs firmware 1.5.1 + flipper/firmware/1.5.1-custom-adv-data.patch
-// (furi_hal_bt_set_custom_adv_data).
+// (furi_hal_bt_set_custom_adv_data, ble_svc_dev_info_set_pnp_id).
 
 #include <furi.h>
 #include <furi_hal_bt.h>
@@ -20,6 +20,7 @@
 #include <bt/bt_service/bt.h>
 #include <cli/cli.h>
 #include <extra_profiles/hid_profile.h>
+#include <services/dev_info_service.h>
 #include <infrared.h>
 #include <infrared/worker/infrared_transmit.h>
 #include <stdlib.h>
@@ -72,7 +73,7 @@ static void telly_get_gap_config(GapConfig* config, FuriHalBleProfileParams para
     config->appearance_char = 0x0180; // Generic remote control
     config->pairing_method = GapPairingNone;
     // Telink OUI like the real remote, unique low bytes. LSB first.
-    const uint8_t mac[GAP_MAC_ADDR_SIZE] = {0x01, 0x11, 0x7E, 0x38, 0xC1, 0xA4};
+    const uint8_t mac[GAP_MAC_ADDR_SIZE] = {0x02, 0x11, 0x7E, 0x38, 0xC1, 0xA4};
     memcpy(config->mac_address, mac, sizeof(mac));
 }
 
@@ -285,6 +286,10 @@ int32_t telly_remote_app(void* p) {
     furi_delay_ms(200);
     bt_keys_storage_set_storage_path(app->bt, KEYS_PATH);
     furi_hal_bt_set_custom_adv_data(adv_data, adv_len, scan_rsp, scan_len);
+    // Report the real remote's PnP ID (Bluetooth SIG source, vendor 0x2D01,
+    // product 0x5017, version 0). The TV picks its key map by this ID; without
+    // it, Telly-specific keys (Input, Screen up/down, A, B, red button) are ignored.
+    ble_svc_dev_info_set_pnp_id(0x01, 0x2D01, 0x5017, 0x0000);
     // Register before advertising starts so the first status change isn't missed.
     bt_set_status_changed_callback(app->bt, bt_status_callback, app);
     telly_profile = *ble_profile_hid;
@@ -308,6 +313,7 @@ int32_t telly_remote_app(void* p) {
     furi_record_close(RECORD_CLI);
 
     furi_hal_bt_set_custom_adv_data(NULL, 0, NULL, 0);
+    ble_svc_dev_info_clear_pnp_id();
     bt_set_status_changed_callback(app->bt, NULL, NULL);
     bt_disconnect(app->bt);
     furi_delay_ms(200);
