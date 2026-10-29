@@ -5,6 +5,15 @@ that mirrors the physical TYRC-1 remote, plus things the remote can't do (one-cl
 lighting colours, input and app shortcuts, a "sleep everything" key, typing into search
 boxes).
 
+## Why this exists
+
+I lost my Telly remote, and found out the hard way that there's no other way to control
+the TV: the Telly phone app has no remote controls, and the TV doesn't accept commands
+over the network. So I built this as a backup, so losing the remote never leaves me stuck
+again. It grew from there into a remote with a few extras the real one doesn't have.
+
+## How it talks to the TV
+
 A Flipper Zero does the talking. It pairs with the TV **over Bluetooth as a second Telly
 remote**, so nothing has to point at the TV, and falls back to **infrared** for the few
 buttons whose Bluetooth codes aren't known yet.
