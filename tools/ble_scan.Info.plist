@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>local.telly-remote.ble-scan</string>
+  <key>CFBundleName</key><string>ble_scan</string>
+  <key>CFBundleExecutable</key><string>ble_scan</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>LSUIElement</key><true/>
+  <key>NSBluetoothAlwaysUsageDescription</key><string>Scan for the Telly remote's Bluetooth advertisement.</string>
+</dict></plist>

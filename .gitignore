@@ -1,0 +1,17 @@
+# Local tooling and build trees
+.venv/
+.ufbt/
+.fw/
+.fw151/
+dist/
+__pycache__/
+node_modules/
+flipper/telly_remote/.vscode/
+.claude/
+
+# Personal: local config and raw captures (contain device names, addresses,
+# network details and nearby devices' Bluetooth traffic)
+config.json
+captures/
+*.pklg
+*.app/

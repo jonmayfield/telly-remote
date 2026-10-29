@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telly Remote</title>
+<style>
+  :root {
+    --bg: #e9ebef; --page-text: #1c1f26; --muted: #8b919c;
+    --body: #17181b; --body-edge: #2a2c31; --key: #222428; --key-hi: #2e3136; --text: #eef0f3;
+    --red: #e8473a; --yellow: #f2c94c; --cyan: #3fb6e8; --ok: #30a46c; --danger: #e5484d;
+    --press: #4f7cff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0c0d10; --page-text: #eef0f3; --body-edge: #34373d; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--page-text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex; justify-content: center; padding: 28px 16px;
+  }
+  .wrap { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+  .remote {
+    width: 236px; padding: 26px 22px 120px; border-radius: 22px; user-select: none; color: var(--text);
+    background: linear-gradient(180deg, #1d1e22, var(--body));
+    box-shadow: 0 24px 60px rgba(0,0,0,.35), inset 0 0 0 1px var(--body-edge), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .status { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11px; color: var(--muted); height: 14px; margin-bottom: 14px; }
+  .led { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+  .led.on { background: var(--ok); box-shadow: 0 0 6px var(--ok); } .led.off { background: var(--danger); }
+
+  button {
+    font: inherit; color: var(--text); background: var(--key); border: 0; cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 0 #0a0a0c, inset 0 1px 0 rgba(255,255,255,.06);
+    transition: transform .07s, background .07s, box-shadow .07s;
+  }
+  button:hover { background: var(--key-hi); }
+  button:active, button.flash { transform: translateY(1px) scale(.96); box-shadow: 0 0 0 2px var(--press); }
+  button:focus-visible { outline: 2px solid var(--press); outline-offset: 2px; }
+  svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .round { width: 40px; height: 40px; border-radius: 50%; }
+  .row { display: flex; justify-content: space-between; align-items: center; }
+  .label { font-size: 11px; font-weight: 600; }
+
+  .telly { display: block; margin: 12px auto 22px; width: 58px; height: 30px; border-radius: 15px; background: var(--red); }
+  .telly:hover { background: #f05a4e; }
+
+  .nav { position: relative; width: 192px; margin: 0 auto; }
+  .nav .row.top { align-items: flex-end; }
+  .tab {
+    width: 66px; height: 38px; font-size: 11px; flex-direction: column; gap: 1px; background: var(--key);
+  }
+  .tab.up { border-radius: 12px 12px 4px 4px; } .tab.down { border-radius: 4px 4px 12px 12px; }
+  .tab svg { width: 10px; height: 10px; stroke-width: 3; }
+
+  .ring {
+    position: relative; width: 150px; height: 150px; margin: 6px auto; border-radius: 50%;
+    background: radial-gradient(circle at 50% 40%, #2b2d32, #1f2125);
+    box-shadow: inset 0 0 0 1px #34373d, 0 3px 0 #0a0a0c;
+  }
+  .ring button { position: absolute; background: transparent; box-shadow: none; color: #6f747d; }
+  .ring button:hover { color: var(--text); background: rgba(255,255,255,.04); }
+  .ring button:active, .ring button.flash { color: var(--text); background: rgba(79,124,255,.25); box-shadow: none; }
+  .ring .up, .ring .down { left: 45px; width: 60px; height: 42px; }
+  .ring .left, .ring .right { top: 45px; width: 42px; height: 60px; }
+  .ring .up { top: 2px; border-radius: 30px 30px 8px 8px; } .ring .down { bottom: 2px; border-radius: 8px 8px 30px 30px; }
+  .ring .left { left: 2px; border-radius: 30px 8px 8px 30px; } .ring .right { right: 2px; border-radius: 8px 30px 30px 8px; }
+  .ring .ok {
+    top: 39px; left: 39px; width: 72px; height: 72px; border-radius: 50%; color: transparent;
+    background: radial-gradient(circle at 50% 35%, #26282c, #18191c); box-shadow: 0 0 0 1px #34373d, 0 2px 0 #0a0a0c;
+  }
+  .ring .ok:hover { color: var(--muted); }
+
+  .ab { width: 36px; height: 36px; border-radius: 10px; font-weight: 800; font-size: 15px; }
+  .ab.a { color: var(--yellow); box-shadow: inset 0 0 0 2px var(--yellow), 0 2px 0 #0a0a0c; }
+  .ab.b { color: var(--cyan); box-shadow: inset 0 0 0 2px var(--cyan), 0 2px 0 #0a0a0c; }
+
+  .bottom { margin-top: 28px; align-items: flex-start; padding: 0 4px; }
+  .vol { width: 44px; height: 132px; border-radius: 22px; flex-direction: column; justify-content: space-between; display: flex; background: var(--key); box-shadow: 0 2px 0 #0a0a0c, inset 0 1px 0 rgba(255,255,255,.06); overflow: hidden; }
+  .vol button { width: 44px; height: 66px; background: transparent; box-shadow: none; border-radius: 0; }
+  .vol button:hover { background: var(--key-hi); }
+  .vol button:active, .vol button.flash { background: rgba(79,124,255,.3); box-shadow: none; transform: none; }
+  .vol svg { width: 20px; height: 20px; }
+
+  .panel {
+    width: 300px; max-width: 100%; border-radius: 18px; padding: 18px; color: var(--text);
+    background: var(--body); box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 0 0 1px var(--body-edge);
+  }
+  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .panel section + section { margin-top: 20px; }
+  .panel p { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  .custom { display: flex; gap: 8px; }
+  .custom button { padding: 0 14px; height: 40px; border-radius: 10px; }
+  input {
+    flex: 1; min-width: 0; height: 40px; border-radius: 10px; border: 1px solid var(--key-hi); background: var(--key);
+    color: var(--text); padding: 0 12px; font: 14px ui-monospace, Menlo, monospace; text-transform: uppercase;
+  }
+  .log { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); min-height: 1.4em; }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12px; color: var(--muted); }
+  kbd { background: var(--key); border-radius: 4px; padding: 1px 6px; font: 11px ui-monospace, Menlo, monospace; color: var(--text); white-space: nowrap; }
+  .sr { position: absolute; left: -9999px; }
+  .swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .swatch {
+    min-height: 46px; padding: 6px 4px; line-height: 1.2; text-align: center;
+    border-radius: 10px; font-size: 11px; font-weight: 600; flex-direction: column; gap: 4px;
+    background: var(--key);
+  }
+  .swatch i { width: 18px; height: 18px; border-radius: 50%; display: block; box-shadow: 0 0 0 1px rgba(255,255,255,.15); }
+  .mood-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .mood-row button { flex: 1; height: 40px; border-radius: 10px; gap: 6px; }
+  .busy { opacity: .5; pointer-events: none; }
+  .explore { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .explore button { min-height: 36px; border-radius: 9px; font-size: 12px; padding: 4px 6px; line-height: 1.2; }
+  .group-label { font-size: 11px; color: var(--muted); margin: 10px 0 6px; }
+  .group-label:first-child { margin-top: 0; }
+  .pick {
+    height: 40px; border-radius: 10px; border: 1px solid var(--key-hi); background: var(--key);
+    color: var(--text); padding: 0 8px; font: inherit;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="remote" aria-label="Telly remote">
+    <div class="status"><span class="led" id="led"></span><span id="status">Checking Flipper…</span></div>
+
+    <div class="row">
+      <button class="round" data-b="power" aria-label="Power">
+        <svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 7.5a8 8 0 1 0 11.4 0"/></svg>
+      </button>
+      <button class="round" data-b="sleep" aria-label="Sleep (all screens and lighting off)" title="Sleep: all screens and lighting off">
+        <svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
+      </button>
+      <button class="round label" data-b="input" aria-label="Input">Input</button>
+    </div>
+
+    <button class="telly" data-b="telly" aria-label="Telly">
+      <svg viewBox="0 0 24 24" style="width:22px;height:22px"><rect x="3" y="7" width="15" height="10" rx="2"/><path d="M7 11h7M20 4v3M18.5 5.5h3"/></svg>
+    </button>
+
+    <div class="nav">
+      <div class="row top">
+        <button class="round" data-b="back" aria-label="Back">
+          <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>
+        </button>
+        <button class="tab up" data-b="screen_up" aria-label="Screen up">
+          <svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>Screen
+        </button>
+        <button class="round" data-b="home" aria-label="Home">
+          <svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
+        </button>
+      </div>
+
+      <div class="ring">
+        <button class="up" data-b="up" data-repeat aria-label="Up"><svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5"/></svg></button>
+        <button class="left" data-b="left" data-repeat aria-label="Left"><svg viewBox="0 0 24 24"><path d="M14 7l-5 5 5 5"/></svg></button>
+        <button class="right" data-b="right" data-repeat aria-label="Right"><svg viewBox="0 0 24 24"><path d="M10 7l5 5-5 5"/></svg></button>
+        <button class="down" data-b="down" data-repeat aria-label="Down"><svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
+        <button class="ok label" data-b="ok" aria-label="OK">OK</button>
+      </div>
+
+      <div class="row">
+        <button class="ab a" data-b="a" aria-label="A">A</button>
+        <button class="tab down" data-b="screen_down" aria-label="Screen down">
+          Screen<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <button class="ab b" data-b="b" aria-label="B">B</button>
+      </div>
+    </div>
+
+    <div class="row bottom">
+      <button class="round" data-b="mute" aria-label="Mute">
+        <svg viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M22 9l-6 6M16 9l6 6"/></svg>
+      </button>
+      <div class="vol">
+        <button data-b="vol_up" data-repeat aria-label="Volume up"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button data-b="vol_down" data-repeat aria-label="Volume down"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      </div>
+      <button class="round" data-b="menu" aria-label="Menu">
+        <svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <section id="shortcuts">
+      <h2>Shortcuts</h2>
+      <div id="shortcut-groups"></div>
+      <p id="shortcut-note">Opens the lower screen and goes straight there. Input is sent by IR, so face the Flipper at the TV.</p>
+    </section>
+
+    <section id="mood">
+      <h2>Mood lighting</h2>
+      <div class="mood-row">
+        <button data-mood="toggle" aria-label="Toggle mood lighting on or off">
+          <svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.3 1 2.1V16h6v-.4c0-.8.4-1.5 1-2.1A6 6 0 0 0 12 3z"/></svg>On / off
+        </button>
+        <button data-mood="dim" aria-label="Dimmer">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg>Dimmer
+        </button>
+        <button data-mood="bright" aria-label="Brighter">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Brighter
+        </button>
+      </div>
+      <div class="swatches" id="swatches"></div>
+      <p id="mood-note">Each change steps through the TV's menu for you: about half a second over Bluetooth, about 20 seconds over IR.</p>
+    </section>
+
+    <section>
+      <h2>Last press</h2>
+      <div class="log" id="log">–</div>
+    </section>
+
+    <section>
+      <h2>Keyboard</h2>
+      <div class="keys">
+        <kbd>↑ ↓ ← →</kbd><span>Navigate</span>
+        <kbd>Enter</kbd><span>OK</span>
+        <kbd>Esc</kbd><span>Back</span>
+        <kbd>H</kbd><span>Home</span>
+        <kbd>T</kbd><span>Telly button</span>
+        <kbd>A</kbd> <span>A</span>
+        <kbd>B</kbd> <span>B</span>
+        <kbd>PgUp / PgDn</kbd><span>Screen ▲ / ▼</span>
+        <kbd>+ / −</kbd><span>Volume</span>
+        <kbd>M</kbd><span>Mute</span>
+        <kbd>N</kbd><span>Menu ≡</span>
+        <kbd>I</kbd><span>Input</span>
+        <kbd>P</kbd><span>Power</span>
+        <kbd>Z</kbd><span>Sleep (everything off)</span>
+        <kbd>1 / 2 / 3</kbd><span>HDMI inputs 1 / 2 / 3</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Type on the TV</h2>
+      <form class="custom" id="type-form">
+        <label for="type-text" class="sr">Text to type on the TV</label>
+        <input id="type-text" maxlength="100" placeholder="Search text…" autocomplete="off" spellcheck="false" style="text-transform:none;font-family:inherit">
+        <button type="submit">Type</button>
+      </form>
+      <p>Sent as Bluetooth keyboard keys into whatever text box is selected.</p>
+    </section>
+
+    <section>
+      <h2>Bluetooth key explorer</h2>
+      <div class="explore" id="explore"></div>
+      <form class="custom" id="hid-form" style="margin-top:8px">
+        <label for="hid-kind" class="sr">Key type</label>
+        <select id="hid-kind" class="pick">
+          <option value="c">Media</option>
+          <option value="k">Keyboard</option>
+        </select>
+        <label for="hid-usage" class="sr">HID usage, hex</label>
+        <input id="hid-usage" maxlength="4" placeholder="e.g. CD" autocomplete="off" spellcheck="false">
+        <button type="submit">Send</button>
+      </form>
+      <p>Standard Bluetooth keys the remote doesn't have. Try them and see what the TV does; unknown keys are simply ignored.</p>
+    </section>
+
+    <section>
+      <h2>Send any IR code</h2>
+      <form class="custom" id="custom">
+        <label for="code" class="sr">IR command, 4 hex digits</label>
+        <input id="code" maxlength="4" placeholder="e.g. A659" autocomplete="off" spellcheck="false">
+        <button type="submit">Send</button>
+      </form>
+      <p>NEC extended, address FE02. For experimenting with codes beyond the remote's buttons.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+const log = document.getElementById("log");
+const led = document.getElementById("led");
+const statusEl = document.getElementById("status");
+let queue = Promise.resolve();
+
+function setStatus(ok, bluetooth) {
+  led.className = "led " + (ok ? "on" : "off");
+  if (!ok) statusEl.textContent = "Flipper not connected";
+  else if (bluetooth === "connected") statusEl.textContent = "Bluetooth connected";
+  else if (bluetooth !== undefined) statusEl.textContent = "Flipper connected · IR only";
+}
+
+function refreshStatus() {
+  fetch("/api/status").then((r) => r.json()).then((j) => setStatus(j.flipper, j.bluetooth)).catch(() => setStatus(false));
+}
+
+function press(payload, label) {
+  // Serialize presses so fast taps reach the TV in order.
+  queue = queue.then(async () => {
+    try {
+      const r = await fetch("/api/press", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const j = await r.json();
+      log.textContent = r.ok
+        ? `${label}  →  ${j.via === "bluetooth" ? "Bluetooth" : "IR"} ${j.code}`
+        : `Error: ${j.error}`;
+      setStatus(r.ok);
+    } catch {
+      log.textContent = "Server not reachable";
+      setStatus(false);
+    }
+  });
+}
+
+function flash(el) {
+  el.classList.add("flash");
+  setTimeout(() => el.classList.remove("flash"), 120);
+}
+
+document.querySelectorAll("[data-b]").forEach((btn) => {
+  let timer = null;
+  const label = btn.getAttribute("aria-label");
+  const send = () => { flash(btn); press({ button: btn.dataset.b }, label); };
+  const stop = () => { clearTimeout(timer); clearInterval(timer); timer = null; };
+  btn.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    send();
+    if (btn.hasAttribute("data-repeat")) timer = setTimeout(() => { timer = setInterval(send, 200); }, 450);
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => btn.addEventListener(ev, stop));
+  btn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); send(); } });
+});
+
+document.getElementById("custom").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = document.getElementById("code").value.trim().toUpperCase();
+  if (/^[0-9A-F]{4}$/.test(v)) press({ code: v }, "Custom");
+  else log.textContent = "Enter 4 hex digits, e.g. A659";
+});
+
+const KEYS = {
+  ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", Enter: "ok",
+  Escape: "back", Backspace: "back", h: "home", t: "telly", a: "a", b: "b",
+  PageUp: "screen_up", PageDown: "screen_down", "+": "vol_up", "=": "vol_up", "-": "vol_down",
+  m: "mute", n: "menu", i: "input", p: "power", z: "sleep",
+};
+// Shortcuts: one click navigates the lower screen's tabs and opens an item.
+const shortcutsEl = document.getElementById("shortcuts");
+const shortcutNote = document.getElementById("shortcut-note");
+const SHORTCUT_LABELS = { "Inputs": "HDMI inputs" };
+const HOTKEYS = {}; // "1".."3" → HDMI inputs, filled in from the server's list
+
+async function shortcut(tab, item) {
+  shortcutsEl.classList.add("busy");
+  shortcutNote.textContent = `${item}: opening…`;
+  try {
+    const r = await fetch("/api/shortcut", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tab, item }),
+    });
+    const j = await r.json();
+    shortcutNote.textContent = r.ok ? `${item}: done.` : `Error: ${j.error}`;
+  } catch {
+    shortcutNote.textContent = "Server not reachable";
+  } finally {
+    shortcutsEl.classList.remove("busy");
+  }
+}
+
+fetch("/api/shortcuts").then((r) => r.json()).then((groups) => {
+  (groups["Inputs"] || []).slice(0, 9).forEach((name, i) => { HOTKEYS[String(i + 1)] = ["Inputs", name]; });
+  const host = document.getElementById("shortcut-groups");
+  Object.entries(groups).forEach(([tab, items]) => {
+    const label = document.createElement("div");
+    label.className = "group-label";
+    label.textContent = SHORTCUT_LABELS[tab] || tab;
+    const grid = document.createElement("div");
+    grid.className = "explore";
+    items.forEach((item) => {
+      const b = document.createElement("button");
+      const key = Object.keys(HOTKEYS).find((k) => HOTKEYS[k][0] === tab && HOTKEYS[k][1] === item);
+      b.textContent = key ? `${key} · ${item}` : item;
+      b.setAttribute("aria-label", `Open ${item}`);
+      b.addEventListener("click", () => { flash(b); shortcut(tab, item); });
+      grid.appendChild(b);
+    });
+    host.append(label, grid);
+  });
+});
+
+document.addEventListener("keydown", (e) => {
+  if (["INPUT", "SELECT"].includes(e.target.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.tagName === "BUTTON" && (e.key === "Enter" || e.key === " ")) return;
+  if (HOTKEYS[e.key]) {
+    e.preventDefault();
+    shortcut(...HOTKEYS[e.key]);
+    return;
+  }
+  const b = KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  if (!b) return;
+  e.preventDefault();
+  const btn = document.querySelector(`[data-b="${b}"]`);
+  if (btn) flash(btn);
+  press({ button: b }, btn ? btn.getAttribute("aria-label") : b);
+});
+
+// Mood lighting: each action replays the TV menu path on the server.
+const SWATCH = {
+  "White": "#f4f4f4", "Blue": "#2f6bff", "Red": "#e5352b", "Green": "#2fbf5b", "Cyan": "#2fd3e0",
+  "Magenta": "#e23ad8", "Yellow": "#f4d03a", "Orange": "#f38a2a", "Violet": "#8b4dff", "Pink": "#ff7eb6",
+  "Candy Cane": "repeating-linear-gradient(45deg,#e5352b 0 4px,#fff 4px 8px)",
+  "Rainbow": "conic-gradient(#e5352b,#f4d03a,#2fbf5b,#2fd3e0,#2f6bff,#e23ad8,#e5352b)",
+  "Static Rainbow": "linear-gradient(90deg,#e5352b,#f4d03a,#2fbf5b,#2fd3e0,#2f6bff,#e23ad8)",
+  "4th of July": "conic-gradient(#e5352b 0 33%,#f4f4f4 0 66%,#2f6bff 0)",
+  "4th of July Static": "linear-gradient(90deg,#e5352b 0 33%,#f4f4f4 0 66%,#2f6bff 0)",
+};
+const moodEl = document.getElementById("mood");
+const moodNote = document.getElementById("mood-note");
+const BRIGHTNESS_STEP = 10;
+
+async function mood(action, value, label) {
+  moodEl.classList.add("busy");
+  moodNote.textContent = `${label}: stepping through the TV menu…`;
+  try {
+    const r = await fetch("/api/mood", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, value }),
+    });
+    const j = await r.json();
+    moodNote.textContent = r.ok ? `${label}: done.` : `Error: ${j.error}`;
+  } catch {
+    moodNote.textContent = "Server not reachable";
+  } finally {
+    moodEl.classList.remove("busy");
+  }
+}
+
+const swatches = document.getElementById("swatches");
+Object.entries(SWATCH).forEach(([name, color]) => {
+  const b = document.createElement("button");
+  b.className = "swatch";
+  b.setAttribute("aria-label", `Mood lighting ${name}`);
+  b.innerHTML = `<i style="background:${color}"></i>${name}`;
+  b.addEventListener("click", () => mood("effect", name, name));
+  swatches.appendChild(b);
+});
+document.querySelector('[data-mood="toggle"]').addEventListener("click", () => mood("toggle", null, "On / off"));
+document.querySelector('[data-mood="dim"]').addEventListener("click", () => mood("brightness", -BRIGHTNESS_STEP, "Dimmer"));
+document.querySelector('[data-mood="bright"]').addEventListener("click", () => mood("brightness", BRIGHTNESS_STEP, "Brighter"));
+
+// Bluetooth key explorer: standard HID usages Android maps to TV keys.
+const EXPLORE = [
+  ["Bright +", "c", "6F"], ["Bright −", "c", "70"], ["Play/Pause", "c", "CD"],
+  ["Next", "c", "B5"], ["Previous", "c", "B6"], ["Rewind", "c", "B4"],
+  ["Fast fwd", "c", "B3"], ["Stop", "c", "B7"], ["Search", "c", "221"],
+  ["Menu", "c", "40"], ["Guide", "c", "8D"], ["Channel +", "c", "9C"],
+  ["Channel −", "c", "9D"], ["Power", "c", "30"],
+  ["Escape", "k", "29"], ["Tab", "k", "2B"], ["Backspace", "k", "2A"],
+];
+const exploreEl = document.getElementById("explore");
+EXPLORE.forEach(([label, kind, usage]) => {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.setAttribute("aria-label", `Bluetooth key ${label}`);
+  b.addEventListener("click", () => { flash(b); press({ hid: { kind, usage } }, label); });
+  exploreEl.appendChild(b);
+});
+document.getElementById("hid-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const usage = document.getElementById("hid-usage").value.trim().toUpperCase();
+  const kind = document.getElementById("hid-kind").value;
+  if (/^[0-9A-F]{1,4}$/.test(usage)) press({ hid: { kind, usage } }, `${kind === "c" ? "Media" : "Key"} ${usage}`);
+  else log.textContent = "Enter 1-4 hex digits, e.g. CD";
+});
+document.getElementById("type-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = document.getElementById("type-text");
+  if (input.value) press({ text: input.value }, `Typed "${input.value}"`);
+});
+
+refreshStatus();
+setInterval(refreshStatus, 15000);
+</script>
+</body>
+</html>

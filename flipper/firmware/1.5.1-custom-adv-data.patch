@@ -1,0 +1,134 @@
+diff --git a/targets/f7/api_symbols.csv b/targets/f7/api_symbols.csv
+index f1ad28a..78a7e50 100644
+--- a/targets/f7/api_symbols.csv
++++ b/targets/f7/api_symbols.csv
+@@ -1,5 +1,5 @@
+ entry,status,name,type,params
+-Version,+,88.2,,
++Version,+,88.3,,
+ Header,+,applications/drivers/subghz/cc1101_ext/cc1101_ext_interconnect.h,,
+ Header,+,applications/services/bt/bt_service/bt.h,,
+ Header,+,applications/services/bt/bt_service/bt_keys_storage.h,,
+@@ -1337,6 +1337,7 @@ Function,+,furi_hal_bt_nvm_sram_sem_acquire,void,
+ Function,+,furi_hal_bt_nvm_sram_sem_release,void,
+ Function,+,furi_hal_bt_reinit,void,
+ Function,+,furi_hal_bt_set_key_storage_change_callback,void,"BleGlueKeyStorageChangedCallback, void*"
++Function,+,furi_hal_bt_set_custom_adv_data,void,"const uint8_t*, uint8_t, const uint8_t*, uint8_t"
+ Function,+,furi_hal_bt_start_advertising,void,
+ Function,+,furi_hal_bt_start_app,FuriHalBleProfileBase*,"const FuriHalBleProfileTemplate*, FuriHalBleProfileParams, const GapRootSecurityKeys*, GapEventCallback, void*"
+ Function,+,furi_hal_bt_start_packet_rx,void,"uint8_t, uint8_t"
+@@ -1985,6 +1986,7 @@ Function,-,gap_extra_beacon_start,_Bool,
+ Function,-,gap_extra_beacon_stop,_Bool,
+ Function,-,gap_get_state,GapState,
+ Function,-,gap_init,_Bool,"GapConfig*, const GapRootSecurityKeys*, GapEventCallback, void*"
++Function,-,gap_set_custom_adv_data,void,"const uint8_t*, uint8_t, const uint8_t*, uint8_t"
+ Function,-,gap_start_advertising,void,
+ Function,-,gap_stop_advertising,void,
+ Function,-,gap_thread_stop,void,
+diff --git a/targets/f7/ble_glue/gap.c b/targets/f7/ble_glue/gap.c
+index 38fc5e4..8cf55f3 100644
+--- a/targets/f7/ble_glue/gap.c
++++ b/targets/f7/ble_glue/gap.c
+@@ -54,6 +54,27 @@ typedef enum {
+ static Gap* gap = NULL;
+ 
+ static void gap_advertise_start(GapState new_state);
++
++// Optional raw advertising / scan response payloads that replace the ones the
++// stack builds (lets an app mirror another device's advertisement exactly,
++// e.g. LE Limited Discoverable flags). Set via gap_set_custom_adv_data().
++static uint8_t gap_custom_adv[31];
++static uint8_t gap_custom_adv_len = 0;
++static uint8_t gap_custom_scan_rsp[31];
++static uint8_t gap_custom_scan_rsp_len = 0;
++
++void gap_set_custom_adv_data(
++    const uint8_t* adv,
++    uint8_t adv_len,
++    const uint8_t* scan_rsp,
++    uint8_t scan_rsp_len) {
++    if(adv_len > sizeof(gap_custom_adv)) adv_len = sizeof(gap_custom_adv);
++    if(scan_rsp_len > sizeof(gap_custom_scan_rsp)) scan_rsp_len = sizeof(gap_custom_scan_rsp);
++    if(adv_len) memcpy(gap_custom_adv, adv, adv_len);
++    if(scan_rsp_len) memcpy(gap_custom_scan_rsp, scan_rsp, scan_rsp_len);
++    gap_custom_adv_len = adv_len;
++    gap_custom_scan_rsp_len = scan_rsp_len;
++}
+ static int32_t gap_app(void* context);
+ 
+ static void gap_verify_connection_parameters(Gap* gap) {
+@@ -467,6 +488,15 @@ static void gap_advertise_start(GapState new_state) {
+         0);
+     if(status) {
+         FURI_LOG_E(TAG, "set_discoverable failed %d", status);
++    } else {
++        if(gap_custom_adv_len) {
++            status = hci_le_set_advertising_data(gap_custom_adv_len, gap_custom_adv);
++            if(status) FURI_LOG_E(TAG, "set_advertising_data failed %d", status);
++        }
++        if(gap_custom_scan_rsp_len) {
++            status = hci_le_set_scan_response_data(gap_custom_scan_rsp_len, gap_custom_scan_rsp);
++            if(status) FURI_LOG_E(TAG, "set_scan_response_data failed %d", status);
++        }
+     }
+     gap->state = new_state;
+     GapEvent event = {.type = GapEventTypeStartAdvertising};
+diff --git a/targets/f7/ble_glue/gap.h b/targets/f7/ble_glue/gap.h
+index 57a0bb7..88c610e 100644
+--- a/targets/f7/ble_glue/gap.h
++++ b/targets/f7/ble_glue/gap.h
+@@ -107,6 +107,14 @@ void gap_thread_stop(void);
+ 
+ void gap_emit_ble_beacon_status_event(bool active);
+ 
++/** Replace the advertising and/or scan response payload (raw AD structures,
++ * max 31 bytes each) used on the next advertising start. len 0 = stack default. */
++void gap_set_custom_adv_data(
++    const uint8_t* adv,
++    uint8_t adv_len,
++    const uint8_t* scan_rsp,
++    uint8_t scan_rsp_len);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/targets/f7/furi_hal/furi_hal_bt.c b/targets/f7/furi_hal/furi_hal_bt.c
+index 4c619c2..2c8c547 100644
+--- a/targets/f7/furi_hal/furi_hal_bt.c
++++ b/targets/f7/furi_hal/furi_hal_bt.c
+@@ -413,6 +413,14 @@ bool furi_hal_bt_ensure_c2_mode(BleGlueC2Mode mode) {
+     return false;
+ }
+ 
++void furi_hal_bt_set_custom_adv_data(
++    const uint8_t* adv,
++    uint8_t adv_len,
++    const uint8_t* scan_rsp,
++    uint8_t scan_rsp_len) {
++    gap_set_custom_adv_data(adv, adv_len, scan_rsp, scan_rsp_len);
++}
++
+ bool furi_hal_bt_extra_beacon_set_data(const uint8_t* data, uint8_t len) {
+     return gap_extra_beacon_set_data(data, len);
+ }
+diff --git a/targets/furi_hal_include/furi_hal_bt.h b/targets/furi_hal_include/furi_hal_bt.h
+index 1711f70..2d2dd6b 100644
+--- a/targets/furi_hal_include/furi_hal_bt.h
++++ b/targets/furi_hal_include/furi_hal_bt.h
+@@ -254,6 +254,16 @@ bool furi_hal_bt_ensure_c2_mode(BleGlueC2Mode mode);
+  */
+ bool furi_hal_bt_extra_beacon_set_data(const uint8_t* data, uint8_t len);
+ 
++/** Replace the main connectable advertisement and/or scan response with raw
++ * AD structures (max 31 bytes each). Applied on the next advertising start;
++ * pass len 0 to use the stack defaults.
++ */
++void furi_hal_bt_set_custom_adv_data(
++    const uint8_t* adv,
++    uint8_t adv_len,
++    const uint8_t* scan_rsp,
++    uint8_t scan_rsp_len);
++
+ /** Get last configured extra beacon data
+  *
+  * @param      data  data buffer to write to. Must be at least EXTRA_BEACON_MAX_DATA_SIZE bytes long
