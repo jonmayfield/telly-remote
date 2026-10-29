@@ -70,6 +70,7 @@ BLE_BUTTONS = {
     # Found with the key explorer: same as the remote's Menu (opens Telly Settings).
     "menu": ("c", "40"),
     # Telly-specific keys (consumer page), from the TYRC-1 spec sheet.
+    "power": ("c", "30"),        # off and wake both work over Bluetooth
     "input": ("c", "1BB"),
     "telly": ("c", "221"),       # the red button; the spec calls it "Assistant"
     "screen_up": ("c", "7A"),    # "Large screen"

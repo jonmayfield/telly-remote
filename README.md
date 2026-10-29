@@ -16,7 +16,7 @@ again. It grew from there into a remote with a few extras the real one doesn't h
 
 A Flipper Zero does the talking. It pairs with the TV **over Bluetooth as a second Telly
 remote**, so nothing has to point at the TV, and falls back to **infrared** whenever the
-Flipper app isn't connected (Power is still IR for now).
+Flipper app isn't connected.
 
 ```
 Browser → server.py (localhost) → USB → Flipper Zero ─┬─ Bluetooth (HID) → Telly
@@ -116,7 +116,7 @@ Keys (consumer page `0x0C`), from Telly's TYRC-1 spec sheet
 
 | Key | Usage | Key | Usage |
 |---|---|---|---|
-| Power | `30` (untested; sent by IR) | Up / Down | `42` / `43` |
+| Power | `30` (off and wake) | Up / Down | `42` / `43` |
 | Input | `1BB` | Left / Right | `44` / `45` |
 | Red Telly ("Assistant", voice) | `221` | OK | `41` |
 | Back / Home | `224` / `223` | A / B | `E5` / `203` |
@@ -127,9 +127,14 @@ Keys (consumer page `0x0C`), from Telly's TYRC-1 spec sheet
 Sleep turns off both screens and the mood lighting; Power wakes the TV. The spec reserves
 custom codes `0x0200`–`0x0210` (B uses `0x203`) and mentions Back+OK / Back+Down combos.
 
-The remote also has a "find me" buzzer service (`00000AA0-3C17-D293-8E48-14FE2E4DA212`,
-write `0x01` to characteristic `B002` to beep for 30 s). The TV doesn't expose it, and a
-sleeping remote isn't connectable, so it can't reliably find a lost remote.
+Tested and found to do nothing on the TV: the custom range `0x0200`–`0x0210` (other than B),
+and standard Android TV keys (Play/Pause, Next/Previous, Channel ±, Guide, Info, Captions,
+Brightness ±, TV, Settings).
+
+The remote has the spec sheet's "find me" buzzer service (`00000AA0-3C17-D293-8E48-14FE2E4DA212`,
+characteristic `B002`), but it doesn't beep: writing `0x01` from a Mac is acknowledged
+(with or without subscribing to notifications) and nothing happens. `tools/findme.swift`
+does the attempt. A sleeping remote isn't connectable anyway, so it couldn't find a lost one.
 
 ### Macros
 
@@ -152,6 +157,7 @@ Inputs, so the bug only shows on HDMI 3). The waits are `SHORTCUT_*` in `server.
 | `tools/flipcli.py` | Run Flipper CLI commands from the computer |
 | `tools/ir_capture.py` | Record IR codes with the Flipper |
 | `tools/ble_scan.swift` | BLE advertisement scanner (CoreBluetooth) |
+| `tools/findme.swift` | Tries the remote's "find me" buzzer (doesn't beep on tested firmware) |
 | `tools/deploy_flipper.sh` | Rebuild and relaunch the Flipper app |
 
 ## Gotchas
