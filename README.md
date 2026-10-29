@@ -136,3 +136,9 @@ steps.
   replugged.
 - macOS: Python needs Local Network permission to reach LAN devices, and command-line
   Bluetooth tools need to run from an app bundle (see `tools/ble_scan.Info.plist`).
+
+## License
+
+[GPL-3.0](LICENSE). The Flipper app builds against, and the patch modifies, the
+[Flipper Zero firmware](https://github.com/flipperdevices/flipperzero-firmware), which is
+GPL-3.0, so the whole project uses the same license.
